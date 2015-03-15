@@ -30,6 +30,16 @@ ReverseRequire.moduleExcludeList = [
 
 
 /**
+ * Debug flag.
+ * 
+ * Set to true to log out paths that can't be found.
+ * 
+ * @type {Boolean}
+ */
+ReverseRequire.debug = false;
+
+
+/**
  * Factory function exported as the interface.
  * 
  * Interface:
@@ -130,8 +140,9 @@ function getInstance(moduleRoot, options){
 			return false;
 		});
 		
-		if (!filepath){
-			throw new Error('(wiwo-grunt-widget) reverseRequire: cannot find package for "'+name+'" in moduleList=\n  ' + moduleList.join('\n  '));
+		if (ReverseRequire.debug){
+			// TODO: Add a propert logger.
+			console.warn('(ReverseRequire) reverseFind: cannot find package for "'+name+'" in moduleList=\n  ' + moduleList.join('\n  '));
 		}
 
 		return filepath;
