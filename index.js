@@ -3,9 +3,6 @@ var path = require('path');
 var util = require('util');
 
 
-module.exports = ReverseRequire;
-
-
 /**
  * Default `moduleRoot` value for this project.
  * 
@@ -37,6 +34,36 @@ ReverseRequire.moduleExcludeList = [
  * @type {Boolean}
  */
 ReverseRequire.debug = false;
+
+
+
+// Self-bootstrap reverse require.
+// 
+// Bit of an Inception setup here...
+// 
+// Before returning the ReverseRequire instance,
+// use it to see if there is another version
+// further down the tree. If so, load that
+// version and return it.
+// 
+// This avoids having multiple different
+// versions running in the same application.
+// 
+// We're using ReverseRequire to 
+// reverse-require itself!
+module.exports = (function(){
+	var result = ReverseRequire;
+	try {
+		var rr = ReverseRequire(__filename);
+		result = rr('reverse-require');
+	} catch (e){
+		// Log an error?
+		// console.log('!!!e=', e);
+		// console.log('!!!e.stack=', e.stack);
+	}
+	
+	return result;
+}());
 
 
 /**
