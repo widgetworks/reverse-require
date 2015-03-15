@@ -55,7 +55,16 @@ module.exports = (function(){
 	var result = ReverseRequire;
 	try {
 		var rr = ReverseRequire(__filename);
-		result = rr('reverse-require');
+		var tempResult = rr('reverse-require');
+		
+		// It's possible to get a reference to our
+		// own in-progress `exports` object.
+		// 
+		// Only assign the new instance this if it
+		// is not our `exports` object!
+		if (tempResult != module.exports){
+			result = tempResult;
+		}
 	} catch (e){
 		// Log an error?
 		// console.log('!!!e=', e);
