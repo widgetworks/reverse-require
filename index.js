@@ -201,6 +201,10 @@ function getInstance(moduleRoot, options){
 			});
 		
 		var isValidPath = function(curPath){
+			if (curPath == null){
+				throw new Error('(ReverseRequire) isValidPath: curPath is null');
+			}
+			
 			return ignore.every(function(ignorePath){
 				return curPath.indexOf(ignorePath) == -1;
 			});
