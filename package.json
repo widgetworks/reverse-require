@@ -1,6 +1,6 @@
 {
   "name": "reverse-require",
-  "version": "1.0.2",
+  "version": "1.0.3-SNAPSHOT",
   "description": "Search for node modules from host project first",
   "author": "Widget Works",
   "repository": {
