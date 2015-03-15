@@ -42,7 +42,7 @@ ReverseRequire.moduleExcludeList = [
 function ReverseRequire(moduleRoot, options){
 	moduleRoot = moduleRoot || ReverseRequire.moduleRoot;
 	if (!moduleRoot){
-		throw new Error('(ReverseRequire) Invalid `moduleRoot` given. Expected string but received: '+moduleRoot + '. Global default can be set on `require("reverse-require").moduleRoot = '<default module root>';`');
+		throw new Error('(ReverseRequire) Invalid `moduleRoot` given. Expected string but received: '+moduleRoot + '. Global default can be set on `require("reverse-require").moduleRoot = "<default module root>";`');
 	}
 	
 	options = options || {};
