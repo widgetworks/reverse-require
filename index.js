@@ -67,8 +67,8 @@ module.exports = (function(){
 		}
 	} catch (e){
 		// Log an error?
-		// console.log('!!!e=', e);
-		// console.log('!!!e.stack=', e.stack);
+		console.log('!!!e=', e);
+		console.log('!!!e.stack=', e.stack);
 	}
 	
 	return result;
@@ -86,7 +86,17 @@ module.exports = (function(){
  * @param {[type]} options    [description]
  */
 function ReverseRequire(moduleRoot, options){
-	moduleRoot = moduleRoot || ReverseRequire.moduleRoot;
+	// Get the global `moduleRoot`.
+	if (!moduleRoot){
+		// Try to work out what the moduleRoot should
+		// be based on the process.cwd() and module load tree.
+		if (!ReverseRequire.moduleRoot){
+			ReverseRequire.moduleRoot = _guessModuleRoot();
+		}
+		
+		moduleRoot = ReverseRequire.moduleRoot;
+	}
+	
 	if (!moduleRoot){
 		throw new Error('(ReverseRequire) Invalid `moduleRoot` given. Expected string but received: '+moduleRoot + '. Global default can be set on `require("reverse-require").moduleRoot = "<default module root>";`');
 	}
@@ -95,6 +105,20 @@ function ReverseRequire(moduleRoot, options){
 	options.moduleExcludeList = options.moduleExcludeList || ReverseRequire.moduleExcludeList;
 	
 	return getInstance(moduleRoot, options);
+}
+
+
+/**
+ * Guess the module root based on the module that required us
+ * 
+ * @return {[type]} [description]
+ */
+function _guessModuleRoot(){
+	var curModule = require.cache[__filename];
+	
+	// Return the filename of the project that required us.
+	var moduleRoot = curModule.parent.filename;
+	return moduleRoot;
 }
 
 
@@ -217,6 +241,23 @@ function getInstance(moduleRoot, options){
 		
 		return paths;
 	}
+	
+	
+	/**
+	 * 
+	 * @param  {string}  path   [description]
+	 * @param  {string[]}  ignore [description]
+	 * @return {Boolean}        [description]
+	 */
+	function _isValidPath(path, ignore){
+		if (path == null){
+			throw new Error('(ReverseRequire) isValidPath: path is null');
+		}
+		
+		return ignore.every(function(ignorePath){
+			return path.indexOf(ignorePath) == -1;
+		});
+	}
 
 
 	/**
@@ -226,7 +267,6 @@ function getInstance(moduleRoot, options){
 	 * @private
 	 */
 	function _filterPaths(moduleExcludesList){
-		var paths = [];
 		var curModule = require.cache[moduleRoot];
 		
 		// Ignore paths that contain these packages. Add additional packages to the list.
@@ -236,32 +276,68 @@ function getInstance(moduleRoot, options){
 				return util.format(template, name);
 			});
 		
-		var isValidPath = function(curPath){
-			if (curPath == null){
-				throw new Error('(ReverseRequire) isValidPath: curPath is null');
-			}
-			
-			return ignore.every(function(ignorePath){
-				return curPath.indexOf(ignorePath) == -1;
-			});
-		};
-		
 		// Collect the set of paths excluding duplicates and matches with the packages listed in the `ignore` list.
 		var cache = {};
 		var curPath;
+		var pathsList = [];
 		while (curModule){
 			curPath = curModule.paths[0];
-			if (!cache[curPath] && isValidPath(curPath)){
-				paths.push(curPath);
+			if (!cache[curPath] && _isValidPath(curPath, ignore)){
+				pathsList.push(curModule.paths);
 				cache[curPath] = true;
 			}
 			curModule = curModule.parent;
 		}
 		
 		// Reverse the list to search from least to most specific.
-		paths.reverse();
+		pathsList.reverse();
 		
+		var paths = _collectPaths(pathsList);
 		return paths;
+	}
+	
+	
+	/**
+	 * Filter down the list of list of paths
+	 * 
+	 * This makes things more node-like in that we
+	 * continue to search up the parent directories
+	 * even further.
+	 * 
+	 * @return {string[]} Return the deduplicated list of search paths
+	 */
+	function _collectPaths(pathLists){
+		// given a list of lists
+		// merge each list item by item
+		var maxLength = 0;
+		var counter = 0;
+		
+		pathLists.forEach(function(paths){
+			if (paths.length > maxLength){
+				maxLength = paths.length;
+			}
+		});
+		
+		var rawPaths = [];
+		while(counter < maxLength){
+			for (var i = 0; i < pathLists.length; i++){
+				if (counter < pathLists[i].length){
+					rawPaths.push(pathLists[i][counter]);
+				}
+			}
+			
+			// at the end increment once.
+			counter++;
+		}
+		
+		// then dedupe
+		var m = {};
+		rawPaths.forEach(function(path){
+			m[path] = true;
+		});
+		
+		var finalPaths = Object.keys(m);
+		return finalPaths;
 	}
 }
 
