@@ -181,6 +181,10 @@ function getInstance(moduleRoot, options){
 			
 			// Directory exists or can be required.
 			if (fs.existsSync(filepath)){
+				if (ReverseRequire.debug){
+					console.log(`Resolved "${name}" to "${filepath}"`);
+				}
+				
 				// Require a file by fully-qualified path.
 				return true;
 			} else {
@@ -188,6 +192,11 @@ function getInstance(moduleRoot, options){
 				try {
 					var result = require.resolve(filepath);
 					if (result){
+						
+						if (ReverseRequire.debug){
+							console.log(`Resolved "${name}" to "${result}"`);
+						}
+						
 						// Valid file found - return immediately.
 						return true;
 					}
@@ -200,7 +209,7 @@ function getInstance(moduleRoot, options){
 			return false;
 		});
 		
-		if (ReverseRequire.debug){
+		if (!filepath && ReverseRequire.debug){
 			// TODO: Add a propert logger.
 			console.warn('(ReverseRequire) reverseFind: cannot find package for "'+name+'" in moduleList=\n  ' + moduleList.join('\n  '));
 		}
