@@ -9,6 +9,10 @@
   },
   "main": "./index.js",
   "dependencies": {
+    "chalk": "^2.3.0",
     "debug": "^3.1.0"
+  },
+  "devDependencies": {
+    "jasmine": "^2.9.0"
   }
 }
