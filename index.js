@@ -1,7 +1,9 @@
-var fs = require('fs');
-var path = require('path');
-var util = require('util');
+const fs = require('fs');
+const _path = require('path');
+const util = require('util');
 
+const chalk = require('chalk');
+const debug = require('debug')('rr');
 
 /**
  * Default `moduleRoot` value for this project.
@@ -56,11 +58,11 @@ module.exports = (function () {
         var rr = ReverseRequire(__filename);
         var tempResult = rr('reverse-require');
         
-        // It's possible to get a reference to our
-        // own in-progress `exports` object.
-        // 
-        // Only assign the new instance this if it
-        // is not our `exports` object!
+        /**
+         * It's possible to get a reference to our own in-progress `exports` object.
+         * 
+         * Only assign the new instance this if it is not our `exports` object!
+         */
         if (tempResult != module.exports) {
             result = tempResult;
         }
@@ -81,10 +83,18 @@ module.exports = (function () {
  *
  *        ReverseRequire([options]): reverseRequire;
  *
- * @param {[type]} moduleRoot [description]
- * @param {[type]} options    [description]
+ * @param {string | object} moduleOrReqOrOptions - string module root, or options object
+ * @param {object} options? - {moduleExcludeList: string[], require} - (optional) options with list of modules to exclude from search (e.g. grunt directories), require function
  */
-function ReverseRequire(moduleRoot, options) {
+function ReverseRequire(moduleOrReqOrOptions, options) {
+    let moduleRoot;
+    let req;
+    if (typeof moduleOrReqOrOptions === 'string'){
+        moduleRoot = moduleOrReqOrOptions;
+    } else if (typeof moduleOrReqOrOptions === 'function'){
+        req = moduleOrReqOrOptions;
+    }
+    
     // Get the global `moduleRoot`.
     if (!moduleRoot) {
         // Try to work out what the moduleRoot should
@@ -100,8 +110,15 @@ function ReverseRequire(moduleRoot, options) {
         throw new Error('(ReverseRequire) Invalid `moduleRoot` given. Expected string but received: ' + moduleRoot + '. Global default can be set on `require("reverse-require").moduleRoot = "<default module root>";`');
     }
     
-    options = options || {};
-    options.moduleExcludeList = options.moduleExcludeList || ReverseRequire.moduleExcludeList;
+    debug(`(ReverseRequire) moduleRoot="${moduleRoot}"`);
+    
+    options = Object.assign(
+        {
+            moduleExcludeList: ReverseRequire.moduleExcludeList,
+            require: req,
+        },
+        options,
+    );
     
     return getInstance(moduleRoot, options);
 }
@@ -113,10 +130,20 @@ function ReverseRequire(moduleRoot, options) {
  * @return {[type]} [description]
  */
 function _guessModuleRoot() {
-    var curModule = require.cache[__filename];
     
-    // Return the filename of the project that required us.
-    var moduleRoot = curModule.parent.filename;
+    let moduleRoot;
+    
+    try {
+        // guess the module root based on the current working directory.
+        const parentPkg = _path.resolve('package.json');
+        require(parentPkg);
+        moduleRoot = require.cache[parentPkg].filename;
+    } catch (err){
+        // Fallback to previous behaviour - base it on the filename of the project that required us.
+        var curModule = require.cache[__filename];
+        moduleRoot = curModule.parent.filename;
+    }
+    
     return moduleRoot;
 }
 
@@ -142,8 +169,12 @@ function getInstance(moduleRoot, options) {
     var resolvedModulePaths = null;
     
     reverseRequire.reverseFind = reverseFind;
+    reverseRequire._reverseFind = _reverseFind;     // returns extra detail on the path that was searched
     reverseRequire._getModulePaths = _getModulePaths;
     reverseRequire._filterPaths = _filterPaths;
+    reverseRequire.bind = function(req){
+        
+    };
     return reverseRequire;
     
     
@@ -156,8 +187,54 @@ function getInstance(moduleRoot, options) {
      * @returns {*}
      */
     function reverseRequire(name, moduleExcludesList) {
-        var filepath = reverseRequire.reverseFind(name, moduleExcludesList);
-        return require(filepath);
+        // let req = reqOrList;
+        // if (reqOrList instanceof Array){
+        //     // legacy, no callingModule passed
+        //     // Shuffle the parameters along
+        //     req = null;
+        //     moduleExcludesList = reqOrList
+        // }
+        
+        let req = options.require;
+        if (!req){
+            if (ReverseRequire.debug){
+                console.warn(chalk.yellow(`(reverseRequire) Pass \`module\` to support require() fallback behaviour`));
+            }
+        }
+        
+        let rrResult = reverseRequire._reverseFind(name, moduleExcludesList);
+        let result;
+        if (rrResult.filepath){
+            result = require(rrResult.filepath);
+        } else if (req) {
+            debug(`(RR.reverseRequire) failed to find name="${name}", searched=\n  ${rrResult.paths.join('\n  ')}\n`);
+            result = req(name);
+            
+            // 2018-02-03 Resolve module relative to calling module.
+            debug(`(RR.reverseRequire) Success falling back to name="${name}"`);
+        } else {
+            // 2018-02-05 Reverse-require failed but we don't have the calling module context to try loading from there.
+            // So the only thing we can do is raise an error.
+            debug(`(RR.reverseRequire) failed to find name="${name}", searched=\n  ${rrResult.paths.join('\n  ')}\n`);
+            throw new Error(`Failed to require package: "${name}". Pass "require" to try fallback loading.`);
+        }
+        return result;
+    }
+    
+    
+    /**
+     * Search for a Node module in the reverse order - from host project up to the current project.
+     *
+     * NOTE: There might be some differences between how `reverseFind()` and
+     * `reverseRequire()` work.
+     *
+     * @param name
+     * @param moduleExcludesList - Optional. List of modules to exclude from search paths.
+     * @returns {string}
+     */
+    function reverseFind(name, moduleExcludesList) {
+        let result = _reverseFind(name, moduleExcludesList);
+        return result.filepath;
     }
     
     
@@ -171,12 +248,14 @@ function getInstance(moduleRoot, options) {
      * @param moduleExcludesList - Optional. List of modules to exclude from search paths.
      * @returns {*}
      */
-    function reverseFind(name, moduleExcludesList) {
-        var moduleList = _getModulePaths(moduleExcludesList);
+    function _reverseFind(name, moduleExcludesList) {
+        let moduleList = _getModulePaths(moduleExcludesList);
         
-        var filepath;
+        let filepath;
+        let paths = [];
         moduleList.some(function (moduleRoot) {
-            filepath = path.join(moduleRoot, name);
+            filepath = _path.join(moduleRoot, name);
+            paths.push(filepath);
             
             // Directory exists or can be required.
             if (fs.existsSync(filepath)) {
@@ -209,11 +288,17 @@ function getInstance(moduleRoot, options) {
         });
         
         if (!filepath && ReverseRequire.debug) {
-            // TODO: Add a propert logger.
-            console.warn('(ReverseRequire) reverseFind: cannot find package for "' + name + '" in moduleList=\n  ' + moduleList.join('\n  '));
+            debug(`(ReverseRequire) reverseFind: cannot find package for "${name}" in moduleList=\n  ${moduleList.join('\n  ')}`);
         }
-        
-        return filepath;
+    
+        /**
+         * Return a tuple containing the resolved file and paths that were searched.
+         */
+        let result = {
+            filepath: filepath,
+            paths: paths,
+        };
+        return result;
     }
     
     
@@ -269,8 +354,7 @@ function getInstance(moduleRoot, options) {
     
     
     /**
-     * Return the module search paths, excluding any
-     * modules that appear in `moduleExcludesList`.
+     * Return the module search paths, excluding any modules that appear in `moduleExcludesList`.
      *
      * @private
      */
@@ -278,11 +362,8 @@ function getInstance(moduleRoot, options) {
         var curModule = require.cache[moduleRoot];
         
         // Ignore paths that contain these packages. Add additional packages to the list.
-        var template = 'node_modules' + path.sep + '%s' + path.sep;
-        var ignore = moduleExcludesList
-            .map(function (name) {
-                return util.format(template, name);
-            });
+        var template = `node_modules${_path.sep}%s${_path.sep}`;
+        var ignore = moduleExcludesList.map((name) => util.format(template, name));
         
         // Collect the set of paths excluding duplicates and matches with the packages listed in the `ignore` list.
         var cache = {};
@@ -315,18 +396,13 @@ function getInstance(moduleRoot, options) {
      * @return {string[]} Return the deduplicated list of search paths
      */
     function _collectPaths(pathLists) {
+        // Get the length of the longest list
+        var maxLength = pathLists.map(paths => paths.length).reduce((x, y) => Math.max(x, y), 0);
+        
         // given a list of lists
         // merge each list item by item
-        var maxLength = 0;
-        var counter = 0;
-        
-        pathLists.forEach(function (paths) {
-            if (paths.length > maxLength) {
-                maxLength = paths.length;
-            }
-        });
-        
         var rawPaths = [];
+        var counter = 0;
         while (counter < maxLength) {
             for (var i = 0; i < pathLists.length; i++) {
                 if (counter < pathLists[i].length) {
@@ -338,13 +414,18 @@ function getInstance(moduleRoot, options) {
             counter++;
         }
         
-        // then dedupe
-        var m = {};
-        rawPaths.forEach(function (path) {
-            m[path] = true;
-        });
+        // then dedupe keys and return an array of paths
+        var finalPaths = Array.from(new Set(rawPaths));
         
-        var finalPaths = Object.keys(m);
+        
+        /*
+        2018-12-18: Breaking change - force the moduleRoot node_modules to the top of the list.
+        If anything is linked into the top-level project then we want to find it there.
+        */
+        const rootModule = require.cache[moduleRoot];
+        finalPaths.unshift(rootModule.paths[0]);
+        // end of change
+        
         return finalPaths;
     }
 }
